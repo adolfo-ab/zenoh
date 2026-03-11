@@ -15,11 +15,15 @@ use std::time::Duration;
 
 use clap::Parser;
 use openmls::{
-    prelude::{BasicCredential, Ciphersuite, CredentialWithKey, KeyPackage},
-    storage::StorageProvider,
+    group::{MlsGroup, MlsGroupCreateConfig, MlsGroupJoinConfig},
+    prelude::{
+        BasicCredential, Capabilities, Ciphersuite, CredentialType, CredentialWithKey, Extension,
+        ExtensionType, Extensions, ExternalSender, KeyPackage, SenderRatchetConfiguration,
+    },
 };
 use openmls_basic_credential::SignatureKeyPair;
-use openmls_rust_crypto::{MemoryStorage, OpenMlsRustCrypto};
+use openmls_rust_crypto::OpenMlsRustCrypto;
+use openmls_traits::OpenMlsProvider;
 use zenoh::{bytes::Encoding, key_expr::KeyExpr, Config};
 use zenoh_examples::CommonArgs;
 
@@ -95,9 +99,50 @@ fn parse_args() -> (Config, KeyExpr<'static>, String, Option<String>, bool) {
     )
 }
 
-fn setup_mls() {
+fn setup_mls_group(
+    provider: OpenMlsRustCrypto,
+    credential_with_key: CredentialWithKey,
+    ciphersuite: Ciphersuite,
+    signature_keys: SignatureKeyPair,
+) {
+    let mls_group_config = MlsGroupJoinConfig::builder()
+        .padding_size(100)
+        .sender_ratchet_configuration(SenderRatchetConfiguration::new(10, 2000))
+        .use_ratchet_tree_extension(true)
+        .build();
+
+    let mls_group_create_config = MlsGroupCreateConfig::builder()
+        .padding_size(10)
+        .sender_ratchet_configuration(SenderRatchetConfiguration::new(10, 2000))
+        .with_group_context_extensions(
+            Extensions::single(Extension::ExternalSenders(vec![ExternalSender::new(
+                credential_with_key.signature_key.clone(),
+                credential_with_key.credential.clone(),
+            )]))
+            .expect("failed to create single-element extension list"),
+        )
+        .ciphersuite(ciphersuite)
+        .capabilities(Capabilities::new(
+            None,
+            None,
+            Some(&[ExtensionType::Unknown(0xff00)]),
+            None,
+            Some(&[CredentialType::Basic]),
+        ))
+        .use_ratchet_tree_extension(true)
+        .build();
+
+    let mls_test_group = MlsGroup::new(
+        &provider,
+        &signature_keys,
+        &mls_group_create_config,
+        credential_with_key.clone(),
+    )
+    .expect("An unexpected error occurrred.");
+}
+
+fn setup_mls_user() {
     let provider = OpenMlsRustCrypto::default();
-    let storage = MemoryStorage::default();
     let ciphersuite = Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519;
 
     let identity: Vec<u8> = vec![1, 2, 3, 4, 5, 6, 7, 8];
@@ -105,7 +150,7 @@ fn setup_mls() {
 
     let signature_keys = SignatureKeyPair::new(ciphersuite.signature_algorithm())
         .expect("Error generating signature key pair");
-    signature_keys.store(&storage).unwrap();
+    signature_keys.store(provider.storage()).unwrap();
 
     let credential_with_key = CredentialWithKey {
         credential: credential.into(),
@@ -113,6 +158,15 @@ fn setup_mls() {
     };
 
     let keypackage = KeyPackage::builder()
-        .build(ciphersuite, &provider, &signature_keys, credential_with_key)
+        .build(
+            ciphersuite,
+            &provider,
+            &signature_keys,
+            credential_with_key.clone(),
+        )
         .unwrap();
+}
+
+fn add_member() {
+    let a = 1;
 }
