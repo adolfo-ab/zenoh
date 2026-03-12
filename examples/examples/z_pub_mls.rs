@@ -11,12 +11,14 @@
 // Contributors:
 //   ZettaScale Zenoh Team, <zenoh@zettascale.tech>
 //
-use std::time::Duration;
+use std::{str::FromStr, time::Duration};
 
 use clap::Parser;
 
-use zenoh::{bytes::Encoding, key_expr::KeyExpr, Config};
-use zenoh_examples::CommonArgs;
+use openmls_rust_crypto::OpenMlsRustCrypto;
+use tls_codec::Serialize;
+use zenoh::{bytes::Encoding, key_expr::KeyExpr, open, Config};
+use zenoh_examples::{mls_utils::create_mls_client, CommonArgs};
 
 #[tokio::main]
 async fn main() {
@@ -27,6 +29,19 @@ async fn main() {
 
     println!("Opening session...");
     let session = zenoh::open(config).await.unwrap();
+
+    // Put the keys into the KeyPackage storage
+    let provider = OpenMlsRustCrypto::default();
+    let identity = vec![1, 2, 3, 4, 5, 6, 7, 8];
+    let (signature_keys, keypackage) = create_mls_client(provider, identity);
+    let keypackage_bytes = keypackage.key_package().tls_serialize_detached().unwrap();
+
+    let openmls_keypackage_keyexpr = KeyExpr::from_str("mls/keypackages").unwrap();
+
+    session
+        .put(&openmls_keypackage_keyexpr, keypackage_bytes)
+        .await
+        .unwrap();
 
     println!("Declaring Publisher on '{key_expr}'...");
     let publisher = session.declare_publisher(&key_expr).await.unwrap();
@@ -89,5 +104,3 @@ fn parse_args() -> (Config, KeyExpr<'static>, String, Option<String>, bool) {
         args.add_matching_listener,
     )
 }
-
-fn add_member() {.}
