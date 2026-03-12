@@ -183,3 +183,4 @@ required-features = ["shared-memory", "unstable"]
 name = "z_posix_shm_provider"
 path = "examples/z_posix_shm_provider.rs"
 required-features = ["shared-memory", "unstable"]
+
